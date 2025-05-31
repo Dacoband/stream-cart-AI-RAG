@@ -25,7 +25,7 @@ def initialize_rag_chain():
         embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GOOGLE_API_KEY"))
         vectorstore = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
         retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
-        llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=os.getenv("GOOGLE_API_KEY"))
+        llm = ChatGoogleGenerativeAI(model="models/gemini-1.5-flash-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
         
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],

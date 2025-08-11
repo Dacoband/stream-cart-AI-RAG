@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "StreamCart Chatbot API",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "env": {
+                "GOOGLE_API_KEY": "AIzaSyCNX-OKoJkIICawnJCYoQoppbuxWcGAVjQ",
+                "BACKEND_API_URL": "https://brightpa.me"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test Client",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_client.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Demo Script",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/demo.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

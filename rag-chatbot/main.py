@@ -46,20 +46,6 @@ class ChatResponse(BaseModel):
     status: str
     user_id: Optional[str] = None      # Trả về user_id
     error: Optional[str] = None
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    if not req.message.strip():
-        raise HTTPException(status_code=400, detail="Empty message")
-    return ChatResponse(status="success", response=f"Bạn hỏi: {req.message}")
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", "8001"))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
 class UserSession:
     """Class để quản lý user session ở backend"""
     

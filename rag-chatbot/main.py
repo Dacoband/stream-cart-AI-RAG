@@ -134,6 +134,48 @@ class APIService:
     @classmethod
     def _cache_set(cls, key: str, data):
         cls._cache[key] = (time.time(), data)
+
+    @staticmethod
+    def get_current_flash_sales() -> List[Dict]:
+        """Fetch current flash sales from backend API"""
+        try:
+            url = f"{backend_api_url}/api/flashsales/current"
+            cache_key = APIService._cache_key("get_current_flash_sales")
+            cached = APIService._cache_get(cache_key)
+            if cached is not None:
+                return cached
+            logger.info(f"Fetching current flash sales: GET {url}")
+            response = requests.get(url, timeout=10)
+            logger.info(f"Flash sales response status={response.status_code}")
+            response.raise_for_status()
+            raw_text = response.text
+            try:
+                data = response.json()
+            except ValueError:
+                logger.error(f"Flash sales response not JSON: {raw_text[:300]}")
+                return []
+            # Expected format: {"success": true, "data": [...]} but fallback to list
+            flash_list: List[Dict] = []
+            if isinstance(data, dict):
+                if isinstance(data.get("data"), list):
+                    flash_list = data["data"]
+                elif isinstance(data.get("items"), list):
+                    flash_list = data["items"]
+                elif isinstance(data.get("result"), list):
+                    flash_list = data["result"]
+                elif isinstance(data.get("Results"), list):
+                    flash_list = data["Results"]
+                else:
+                    # maybe the dict itself is a single flash sale object
+                    if {"productName", "flashSalePrice"}.issubset(set(data.keys())):
+                        flash_list = [data]
+            elif isinstance(data, list):
+                flash_list = data
+            APIService._cache_set(cache_key, flash_list)
+            return flash_list
+        except requests.RequestException as e:
+            logger.error(f"Error fetching current flash sales: {e}")
+            return []
     
     @staticmethod
     def get_products() -> List[Dict]:
@@ -277,7 +319,7 @@ class PromptTemplateService:
     """Custom prompt template service (替代 LangChain)"""
 
     @staticmethod
-    def create_main_prompt(user_message: str, products_info: str, shops_info: str, context: str = "") -> str:
+    def create_main_prompt(user_message: str, products_info: str, shops_info: str, flash_sales_info: str = "", context: str = "") -> str:
         """Create main chatbot prompt"""
         return f"""
 HƯỚNG DẪN HỆ THỐNG (KHÔNG TIẾT LỘ CHO NGƯỜI DÙNG):
@@ -288,6 +330,9 @@ THÔNG TIN SẢN PHẨM:
 
 THÔNG TIN CỬA HÀNG:
 {shops_info}
+
+FLASH SALE HIỆN TẠI:
+{flash_sales_info}
 
 NGỮ CẢNH:
 {context}
@@ -330,7 +375,9 @@ class ChatbotService:
             "shops": [],
             "products_info": "Chưa có thông tin sản phẩm.",
             "shops_info": "Chưa có thông tin cửa hàng.",
-            "matched_shop": None
+            "matched_shop": None,
+            "flash_sales": [],
+            "flash_sales_info": "Chưa có flash sale nào."
         }
 
         # --- Parse potential filters ---
@@ -396,6 +443,19 @@ class ChatbotService:
                                 "Chưa tìm thấy sản phẩm nào cho cửa hàng "
                                 + (matched.get('shopName') or matched.get('name') or '')
                             )
+
+        # --- Flash sale intent detection ---
+        flash_keywords = [
+            "flash sale", "flashsale", "flash-sales", "deal sốc", "giờ vàng", "sale sốc", "sale giờ vàng",
+            "giảm giá nhanh", "chớp nhoáng", "deal hot", "deal hôm nay"
+        ]
+        if any(k in lower_msg for k in flash_keywords):
+            flash_sales = self.api_service.get_current_flash_sales()
+            if flash_sales:
+                context["flash_sales"] = flash_sales
+                context["flash_sales_info"] = self.format_flash_sales_info(flash_sales)
+            else:
+                context["flash_sales_info"] = "Hiện tại chưa có chương trình flash sale đang diễn ra."    
 
         return context
 
@@ -494,6 +554,7 @@ class ChatbotService:
             (['khuyến mãi', 'mã giảm', 'voucher', 'giảm giá'], "Khuyến mãi: nhập mã tại bước thanh toán; mỗi đơn áp dụng tối đa 1 mã + freeship nếu đủ điều kiện."),
             (['hỗ trợ', 'support', 'liên hệ', 'care'], "Hỗ trợ: bạn có thể gửi câu hỏi qua mục Trợ giúp hoặc chat trực tiếp trong khung giờ 8h-22h."),
             (['đơn hàng', 'tình trạng đơn', 'tracking', 'mã đơn'], "Theo dõi đơn: vào mục 'Đơn hàng của tôi' để xem trạng thái cập nhật thời gian thực."),
+            (['flash sale', 'deal sốc', 'giờ vàng', 'sale giờ vàng', 'flashsale'], "Flash Sale: diễn ra trong khung giờ giới hạn, số lượng có hạn, nên thanh toán sớm để giữ mức giá ưu đãi.")
         ]
         for keys, text in kb:
             if any(k in m for k in keys):
@@ -551,6 +612,30 @@ class ChatbotService:
             formatted += f"   Phê duyệt: {approval_status}\n\n"
         
         return formatted
+
+    def format_flash_sales_info(self, flash_sales: List[Dict]) -> str:
+        """Format flash sales information for prompt (hide internal IDs)"""
+        if not flash_sales:
+            return "Không có flash sale nào."
+        formatted = "FLASH SALE ĐANG DIỄN RA:\n"
+        limited = flash_sales[:5]
+        for i, fs in enumerate(limited, 1):
+            pname = fs.get('productName') or fs.get('name') or 'Sản phẩm'
+            flash_price = fs.get('flashSalePrice')
+            base_price = fs.get('price') or fs.get('originalPrice')
+            discount = None
+            try:
+                if flash_price is not None and base_price not in [None, 0]:
+                    discount = round(100 - (float(flash_price) / float(base_price) * 100))
+            except Exception:
+                discount = None
+            qty_avail = fs.get('quantityAvailable')
+            qty_sold = fs.get('quantitySold')
+            slot = fs.get('slot')
+            end_time = fs.get('endTime')
+            formatted += f"{i}. {pname} - Giá flash: {flash_price} (Giá gốc: {base_price}" + (f", -{discount}%" if discount is not None else "") + ")\n"
+            formatted += f"   Số lượng: còn {qty_avail} đã bán {qty_sold}; Slot: {slot}; Kết thúc: {end_time}\n"
+        return formatted
     
     async def process_message(self, message: str, user_id: str = None, session_id: str = None, context: str = "") -> str:
         """Process user message and generate response using Gemini"""
@@ -574,6 +659,7 @@ class ChatbotService:
                 user_message=message,
                 products_info=combined_products_info,
                 shops_info=api_context["shops_info"],
+                flash_sales_info=api_context.get("flash_sales_info", ""),
                 context=""  # Không thêm context nhạy cảm
             )
             
@@ -606,35 +692,27 @@ async def root():
 async def chat_endpoint(request: ChatRequest, http_request: Request):
     """Main chat endpoint - Simplified với chỉ user_id"""
     try:
-        # Ưu tiên dùng user_id từ Backend C# request
         if request.user_id:
-            # Called from Backend C# - dùng user_id được cung cấp
             user_id = request.user_id
-            # Tạo session_id cố định cho user này: user_id chính là session
             session_id = f"user_{user_id}_main"
             logger.info(f"Processing chat from Backend C# - User: {user_id}")
         else:
-            # Direct call hoặc legacy - tự tạo user_id từ headers
             user_id, session_id = user_session_manager.get_or_create_session(
                 dict(http_request.headers)
             )
             logger.info(f"Processing direct chat - User: {user_id}")
-        
-        # Xử lý tin nhắn
         response = await chatbot_service.process_message(
             message=request.message,
             user_id=user_id,
             session_id=session_id,
             context=""
         )
-        
-        # Lưu tin nhắn vào session
         user_session_manager.save_message(session_id, request.message, response)
         
         return ChatResponse(
             response=response,
             status="success",
-            user_id=user_id      # Trả về user_id (không cần session_id)
+            user_id=user_id
         )
         
     except HTTPException as he:
@@ -684,6 +762,15 @@ async def get_products_by_shop(shop_id: str, activeOnly: bool = True):
     try:
         products = chatbot_service.api_service.get_products_by_shop(shop_id, active_only=activeOnly)
         return {"shop_id": shop_id, "count": len(products), "products": products}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/flashsales/current")
+async def get_current_flash_sales():
+    """Get current flash sales"""
+    try:
+        flash_sales = chatbot_service.api_service.get_current_flash_sales()
+        return {"count": len(flash_sales), "flash_sales": flash_sales}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

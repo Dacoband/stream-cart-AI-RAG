@@ -630,210 +630,211 @@ class ChatbotService:
             logger.error(f"Error processing message: {e}")
             raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
 
-    chatbot_service = ChatbotService()
-    user_session_manager = UserSession()
+# Instantiate services at module level (outside class definition)
+chatbot_service = ChatbotService()
+user_session_manager = UserSession()
 
-    @app.get("/")
-    async def root():
-        """Root endpoint"""
-        return {
-            "message": "StreamCart AI Chatbot API",
-            "version": "1.0.0",
-            "status": "active"
-        }
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "StreamCart AI Chatbot API",
+        "version": "1.0.0",
+        "status": "active"
+    }
 
-    @app.post("/chat", response_model=ChatResponse)
-    async def chat_endpoint(request: ChatRequest, http_request: Request):
-        """Main chat endpoint - Simplified với chỉ user_id"""
-        try:
-            if request.user_id:
-                user_id = request.user_id
-                session_id = f"user_{user_id}_main"
-                logger.info(f"Processing chat from Backend C# - User: {user_id}")
-            else:
-                user_id, session_id = user_session_manager.get_or_create_session(
-                    dict(http_request.headers)
-                )
-                logger.info(f"Processing direct chat - User: {user_id}")
-            response = await chatbot_service.process_message(
-                message=request.message,
-                user_id=user_id,
-                session_id=session_id,
-                context=""
-            )
-            user_session_manager.save_message(session_id, request.message, response)
-            
-            return ChatResponse(
-                response=response,
-                status="success",
-                user_id=user_id
-            )
-            
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            logger.error(f"Unexpected error in chat endpoint: {e}")
-            return ChatResponse(
-                response="Xin lỗi, có lỗi xảy ra khi xử lý yêu cầu của bạn.",
-                status="error",
-                error=str(e)
-            )
-
-    @app.get("/products")
-    async def get_products():
-        """Get all products from backend API"""
-        try:
-            products = chatbot_service.api_service.get_products()
-            return {"products": products, "count": len(products)}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/shops")
-    async def get_shops():
-        """Get all shops from backend API"""
-        try:
-            shops = chatbot_service.api_service.get_shops()
-            return {"shops": shops, "count": len(shops)}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/shops/{shop_id}")
-    async def get_shop_by_id(shop_id: str):
-        """Get specific shop by ID"""
-        try:
-            shop = chatbot_service.api_service.get_shop_by_id(shop_id)
-            if not shop:
-                raise HTTPException(status_code=404, detail="Shop not found")
-            return shop
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/shops/{shop_id}/products")
-    async def get_products_by_shop(shop_id: str, activeOnly: bool = True):
-        """Get products of a specific shop"""
-        try:
-            products = chatbot_service.api_service.get_products_by_shop(shop_id, active_only=activeOnly)
-            return {"shop_id": shop_id, "count": len(products), "products": products}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/flashsales/current")
-    async def get_current_flash_sales():
-        """Get current flash sales"""
-        try:
-            flash_sales = chatbot_service.api_service.get_current_flash_sales()
-            return {"count": len(flash_sales), "flash_sales": flash_sales}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/session/{session_id}")
-    async def get_session_history(session_id: str):
-        """Lấy lịch sử chat của session"""
-        try:
-            if session_id in user_session_manager.sessions:
-                session_data = user_session_manager.sessions[session_id]
-                return {
-                    "session_id": session_id,
-                    "user_id": session_data["user_id"],
-                    "created_at": session_data["created_at"],
-                    "message_count": len(session_data["messages"]),
-                    "messages": session_data["messages"]
-                }
-            else:
-                raise HTTPException(status_code=404, detail="Session not found")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/user/{user_id}/history")
-    async def get_user_chat_history(user_id: str, page: int = 1, pageSize: int = 20):
-        """Lấy lịch sử chat của user - Simplified"""
-        try:
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest, http_request: Request):
+    """Main chat endpoint - Simplified với chỉ user_id"""
+    try:
+        if request.user_id:
+            user_id = request.user_id
             session_id = f"user_{user_id}_main"
-            
-            if session_id in user_session_manager.sessions:
-                session_data = user_session_manager.sessions[session_id]
-                messages = session_data["messages"]
-                
-                # Pagination
-                total_messages = len(messages)
-                start_idx = (page - 1) * pageSize
-                end_idx = start_idx + pageSize
-                paginated_messages = messages[start_idx:end_idx]
-                
-                return {
-                    "user_id": user_id,
-                    "total_messages": total_messages,
-                    "page": page,
-                    "page_size": pageSize,
-                    "total_pages": (total_messages + pageSize - 1) // pageSize,
-                    "messages": paginated_messages
-                }
-            else:
-                return {
-                    "user_id": user_id,
-                    "total_messages": 0,
-                    "page": page,
-                    "page_size": pageSize,
-                    "total_pages": 0,
-                    "messages": []
-                }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.info(f"Processing chat from Backend C# - User: {user_id}")
+        else:
+            user_id, session_id = user_session_manager.get_or_create_session(
+                dict(http_request.headers)
+            )
+            logger.info(f"Processing direct chat - User: {user_id}")
+        response = await chatbot_service.process_message(
+            message=request.message,
+            user_id=user_id,
+            session_id=session_id,
+            context=""
+        )
+        user_session_manager.save_message(session_id, request.message, response)
+        
+        return ChatResponse(
+            response=response,
+            status="success",
+            user_id=user_id
+        )
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Unexpected error in chat endpoint: {e}")
+        return ChatResponse(
+            response="Xin lỗi, có lỗi xảy ra khi xử lý yêu cầu của bạn.",
+            status="error",
+            error=str(e)
+        )
 
-    @app.delete("/user/{user_id}/history")
-    async def clear_user_chat_history(user_id: str):
-        """Xóa lịch sử chat của user"""
-        try:
-            session_id = f"user_{user_id}_main"
-            
-            if session_id in user_session_manager.sessions:
-                # Xóa session
-                del user_session_manager.sessions[session_id]
-                return {
-                    "message": f"Chat history cleared for user {user_id}",
-                    "user_id": user_id
-                }
-            else:
-                return {
-                    "message": f"No chat history found for user {user_id}",
-                    "user_id": user_id
-                }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+@app.get("/products")
+async def get_products():
+    """Get all products from backend API"""
+    try:
+        products = chatbot_service.api_service.get_products()
+        return {"products": products, "count": len(products)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/user/{user_id}/sessions")
-    async def get_user_sessions(user_id: str):
-        """Lấy tất cả sessions của một user"""
-        try:
-            user_sessions = []
-            for session_id, session_data in user_session_manager.sessions.items():
-                if session_data["user_id"] == user_id:
-                    user_sessions.append({
-                        "session_id": session_id,
-                        "created_at": session_data["created_at"],
-                        "message_count": len(session_data["messages"])
-                    })
+@app.get("/shops")
+async def get_shops():
+    """Get all shops from backend API"""
+    try:
+        shops = chatbot_service.api_service.get_shops()
+        return {"shops": shops, "count": len(shops)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/shops/{shop_id}")
+async def get_shop_by_id(shop_id: str):
+    """Get specific shop by ID"""
+    try:
+        shop = chatbot_service.api_service.get_shop_by_id(shop_id)
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        return shop
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/shops/{shop_id}/products")
+async def get_products_by_shop(shop_id: str, activeOnly: bool = True):
+    """Get products of a specific shop"""
+    try:
+        products = chatbot_service.api_service.get_products_by_shop(shop_id, active_only=activeOnly)
+        return {"shop_id": shop_id, "count": len(products), "products": products}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/flashsales/current")
+async def get_current_flash_sales():
+    """Get current flash sales"""
+    try:
+        flash_sales = chatbot_service.api_service.get_current_flash_sales()
+        return {"count": len(flash_sales), "flash_sales": flash_sales}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/session/{session_id}")
+async def get_session_history(session_id: str):
+    """Lấy lịch sử chat của session"""
+    try:
+        if session_id in user_session_manager.sessions:
+            session_data = user_session_manager.sessions[session_id]
+            return {
+                "session_id": session_id,
+                "user_id": session_data["user_id"],
+                "created_at": session_data["created_at"],
+                "message_count": len(session_data["messages"]),
+                "messages": session_data["messages"]
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/user/{user_id}/history")
+async def get_user_chat_history(user_id: str, page: int = 1, pageSize: int = 20):
+    """Lấy lịch sử chat của user - Simplified"""
+    try:
+        session_id = f"user_{user_id}_main"
+        
+        if session_id in user_session_manager.sessions:
+            session_data = user_session_manager.sessions[session_id]
+            messages = session_data["messages"]
+            
+            # Pagination
+            total_messages = len(messages)
+            start_idx = (page - 1) * pageSize
+            end_idx = start_idx + pageSize
+            paginated_messages = messages[start_idx:end_idx]
             
             return {
                 "user_id": user_id,
-                "total_sessions": len(user_sessions),
-                "sessions": user_sessions
+                "total_messages": total_messages,
+                "page": page,
+                "page_size": pageSize,
+                "total_pages": (total_messages + pageSize - 1) // pageSize,
+                "messages": paginated_messages
             }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        else:
+            return {
+                "user_id": user_id,
+                "total_messages": 0,
+                "page": page,
+                "page_size": pageSize,
+                "total_pages": 0,
+                "messages": []
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/health")
-    async def health_check():
-        """Health check endpoint"""
+@app.delete("/user/{user_id}/history")
+async def clear_user_chat_history(user_id: str):
+    """Xóa lịch sử chat của user"""
+    try:
+        session_id = f"user_{user_id}_main"
+        
+        if session_id in user_session_manager.sessions:
+            # Xóa session
+            del user_session_manager.sessions[session_id]
+            return {
+                "message": f"Chat history cleared for user {user_id}",
+                "user_id": user_id
+            }
+        else:
+            return {
+                "message": f"No chat history found for user {user_id}",
+                "user_id": user_id
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/user/{user_id}/sessions")
+async def get_user_sessions(user_id: str):
+    """Lấy tất cả sessions của một user"""
+    try:
+        user_sessions = []
+        for session_id, session_data in user_session_manager.sessions.items():
+            if session_data["user_id"] == user_id:
+                user_sessions.append({
+                    "session_id": session_id,
+                    "created_at": session_data["created_at"],
+                    "message_count": len(session_data["messages"])
+                })
+        
         return {
-            "status": "healthy",
-            "gemini_configured": bool(gemini_api_key),
-            "backend_api_url": backend_api_url,
-            "active_sessions": len(user_session_manager.sessions)
+            "user_id": user_id,
+            "total_sessions": len(user_sessions),
+            "sessions": user_sessions
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if __name__ == "__main__":
-        import uvicorn
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "gemini_configured": bool(gemini_api_key),
+        "backend_api_url": backend_api_url,
+        "active_sessions": len(user_session_manager.sessions)
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

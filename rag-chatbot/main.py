@@ -11,6 +11,7 @@ import time
 import uuid
 import difflib
 import re
+from policies import search_policy, get_purchase_policy, get_sales_policy, get_general_terms
 
 # Load environment variables
 load_dotenv()
@@ -513,6 +514,21 @@ class ChatbotService:
     def get_additional_context(self, message: str) -> str:
         m = message.lower()
         snippets = []
+        
+        # Check for policy-related questions first
+        policy_keywords = [
+            'chính sách', 'policy', 'quy định', 'điều khoản', 'quy tắc',
+            'mua hàng', 'bán hàng', 'đặt hàng', 'thanh toán', 'giao hàng',
+            'vận chuyển', 'đổi trả', 'hoàn tiền', 'mở shop', 'đăng ký shop',
+            'vi phạm', 'xử lý vi phạm', 'trách nhiệm', 'nghĩa vụ'
+        ]
+        
+        if any(k in m for k in policy_keywords):
+            policy_info = search_policy(message)
+            if policy_info:
+                snippets.append(f"CHÍNH SÁCH STREAMCART:\n{policy_info}")
+        
+        # Existing knowledge base
         kb = [
             (['thanh toán', 'payment', 'trả tiền'], "Phương thức thanh toán: hỗ trợ ví điện tử, thẻ ngân hàng nội địa và quốc tế, COD tùy khu vực."),
             (['vận chuyển', 'giao hàng', 'ship'], "Vận chuyển: đối tác giao hàng tiêu chuẩn 2-5 ngày làm việc, có tuỳ chọn nhanh ở một số tỉnh."),
@@ -525,7 +541,7 @@ class ChatbotService:
         for keys, text in kb:
             if any(k in m for k in keys):
                 snippets.append(text)
-        return "\n".join(snippets)
+        return "\n\n".join(snippets)
     
     def format_products_info(self, products: List[Dict]) -> str:
         """Format products information for prompt"""
@@ -726,6 +742,43 @@ async def get_current_flash_sales():
     try:
         flash_sales = chatbot_service.api_service.get_current_flash_sales()
         return {"count": len(flash_sales), "flash_sales": flash_sales}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/policies")
+async def get_all_policies():
+    """Get all platform policies"""
+    try:
+        from policies import get_full_policy
+        return {"policies": get_full_policy()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/policies/purchase")
+async def get_purchase_policies():
+    """Get purchase policies only"""
+    try:
+        from policies import get_purchase_policy
+        return {"policy_type": "purchase", "policy": get_purchase_policy()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/policies/sales")
+async def get_sales_policies():
+    """Get sales policies only"""
+    try:
+        from policies import get_sales_policy
+        return {"policy_type": "sales", "policy": get_sales_policy()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/policies/search")
+async def search_policies(q: str):
+    """Search for specific policy information"""
+    try:
+        from policies import search_policy
+        result = search_policy(q)
+        return {"query": q, "policy": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
